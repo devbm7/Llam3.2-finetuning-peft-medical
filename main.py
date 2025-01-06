@@ -1,12 +1,7 @@
 import torch
 from datasets import load_dataset
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    TrainingArguments,
-    Trainer,
-    DataCollatorForLanguageModeling
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
+from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
 import os
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
@@ -21,83 +16,78 @@ def load_and_process_data():
         ]
         return {"text": texts}
     
-    processed_dataset = dataset.map(
+    return dataset.map(
         format_conversation, 
         batched=True,
         remove_columns=dataset["train"].column_names,
         batch_size=64
     )
-    return processed_dataset
 
 def tokenize_data(dataset, tokenizer):
-    def tokenize_function(examples):
-        return tokenizer(
+    return dataset.map(
+        lambda examples: tokenizer(
             examples["text"],
             truncation=True,
             max_length=256,
             padding="max_length"
-        )
-    
-    tokenized_dataset = dataset.map(
-        tokenize_function,
+        ),
         remove_columns=["text"],
         batched=True,
         batch_size=64
     )
-    return tokenized_dataset
 
 def main():
     model_name = "meta-llama/Llama-3.2-3B"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    
-    training_args = TrainingArguments(
-        output_dir="./llama3-mental-health-counselor",
-        num_train_epochs=3,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=16,
-        warmup_steps=50,
-        logging_steps=50,
-        learning_rate=2e-5,
-        weight_decay=0.01,
-        fp16=True,
-        logging_dir="./logs",
-        save_strategy="epoch",
-        save_total_limit=1,
-        gradient_checkpointing=True,
-        optim="adamw_torch_fused",
-        max_grad_norm=0.3,
-        remove_unused_columns=True,
-    )
-    
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         load_in_8bit=True,
         device_map={"": 0},
         torch_dtype=torch.float16,
     )
-    
-    model.gradient_checkpointing_enable()
-    
+
+    model = prepare_model_for_kbit_training(model)
+
+    config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=["q_proj", "v_proj"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM"
+    )
+
+    model = get_peft_model(model, config)
+
+    training_args = TrainingArguments(
+        output_dir="./llama3-mental-health-counselor",
+        num_train_epochs=3,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=16,
+        warmup_steps=50,
+        learning_rate=2e-4,
+        fp16=True,
+        logging_dir="./logs",
+        save_strategy="epoch",
+        save_total_limit=1,
+        gradient_checkpointing=True,
+        optim="adamw_torch_fused",
+    )
+
     dataset = load_and_process_data()
     tokenized_dataset = tokenize_data(dataset, tokenizer)
-    
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False
-    )
-    
-    torch.cuda.empty_cache()
-    
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=tokenized_dataset["train"],
-        data_collator=data_collator,
+        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     )
-    
+
     trainer.train()
-    trainer.save_model("./llama3-mental-health-counselor-final")
+    model.save_pretrained("./llama3-mental-health-counselor-final")
     tokenizer.save_pretrained("./llama3-mental-health-counselor-final")
 
 if __name__ == "__main__":
