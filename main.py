@@ -14,7 +14,6 @@ def load_and_process_data():
     """Load and process the mental health counseling dataset."""
     dataset = load_dataset("Amod/mental_health_counseling_conversations")
     
-    # Format conversations into instruction format
     def format_conversation(example):
         return {
             "text": f"### Instruction: Act as a mental health counselor. Respond to the following message:\n\n{example['Context']}\n\n### Response: {example['Response']}"
@@ -46,17 +45,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    
-    # Load and process dataset
-    dataset = load_and_process_data()
-    tokenized_dataset = tokenize_data(dataset, tokenizer)
-    
-    # Training arguments
+    # Training arguments - specify device_map here
     training_args = TrainingArguments(
         output_dir="./llama3-mental-health-counselor",
         num_train_epochs=3,
@@ -70,7 +59,21 @@ def main():
         logging_dir="./logs",
         save_strategy="epoch",
         save_total_limit=2,
+        # Remove device mapping from training arguments
+        no_cuda=False
     )
+    
+    # Load model with device mapping after training args are set
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        # Use specific device mapping instead of "auto"
+        device_map={"": 0}  # Maps all layers to first GPU
+    )
+    
+    # Load and process dataset
+    dataset = load_and_process_data()
+    tokenized_dataset = tokenize_data(dataset, tokenizer)
     
     # Initialize data collator
     data_collator = DataCollatorForLanguageModeling(
