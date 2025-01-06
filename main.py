@@ -9,6 +9,10 @@ from transformers import (
 )
 import numpy as np
 from typing import Dict, Sequence
+import os
+
+# Set environment variables for memory optimization
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
 def load_and_process_data():
     """Load and process the mental health counseling dataset."""
@@ -19,7 +23,11 @@ def load_and_process_data():
             "text": f"### Instruction: Act as a mental health counselor. Respond to the following message:\n\n{example['Context']}\n\n### Response: {example['Response']}"
         }
     
-    processed_dataset = dataset.map(format_conversation, remove_columns=dataset["train"].column_names)
+    processed_dataset = dataset.map(
+        format_conversation, 
+        remove_columns=dataset["train"].column_names,
+        batched=True
+    )
     return processed_dataset
 
 def tokenize_data(dataset, tokenizer):
@@ -28,14 +36,15 @@ def tokenize_data(dataset, tokenizer):
         return tokenizer(
             examples["text"],
             truncation=True,
-            max_length=512,
-            padding=False
+            max_length=256,  # Reduced from 512
+            padding="max_length"
         )
     
     tokenized_dataset = dataset.map(
         tokenize_function,
         remove_columns=["text"],
-        num_proc=4
+        batched=True,
+        batch_size=64
     )
     return tokenized_dataset
 
@@ -45,31 +54,36 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
-    # Training arguments - specify device_map here
+    # Training arguments with memory optimizations
     training_args = TrainingArguments(
         output_dir="./llama3-mental-health-counselor",
         num_train_epochs=3,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=8,
-        warmup_steps=100,
-        logging_steps=100,
+        per_device_train_batch_size=1,  # Reduced batch size
+        gradient_accumulation_steps=16,  # Increased gradient accumulation
+        warmup_steps=50,
+        logging_steps=50,
         learning_rate=2e-5,
         weight_decay=0.01,
         fp16=True,
         logging_dir="./logs",
         save_strategy="epoch",
-        save_total_limit=2,
-        # Remove device mapping from training arguments
-        no_cuda=False
+        save_total_limit=1,  # Reduced number of checkpoints
+        gradient_checkpointing=True,  # Enable gradient checkpointing
+        optim="adamw_torch_fused",  # Use fused optimizer
+        max_grad_norm=0.3,
+        remove_unused_columns=True,
     )
     
-    # Load model with device mapping after training args are set
+    # Load model with 8-bit quantization
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
+        load_in_8bit=True,  # Enable 8-bit quantization
+        device_map={"": 0},
         torch_dtype=torch.float16,
-        # Use specific device mapping instead of "auto"
-        device_map={"": 0}  # Maps all layers to first GPU
     )
+    
+    # Enable gradient checkpointing
+    model.gradient_checkpointing_enable()
     
     # Load and process dataset
     dataset = load_and_process_data()
@@ -89,6 +103,9 @@ def main():
         data_collator=data_collator,
     )
     
+    # Clear CUDA cache before training
+    torch.cuda.empty_cache()
+    
     # Start training
     trainer.train()
     
@@ -97,4 +114,8 @@ def main():
     tokenizer.save_pretrained("./llama3-mental-health-counselor-final")
 
 if __name__ == "__main__":
+    # Set memory efficient options
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    
     main()
