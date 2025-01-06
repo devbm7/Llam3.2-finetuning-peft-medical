@@ -42,7 +42,7 @@ def tokenize_data(dataset, tokenizer):
 
 def main():
     # Initialize model and tokenizer
-    model_name = "meta-llama/Llama-2-3b-hf"
+    model_name = "meta-llama/Llama-3.2-3B"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
@@ -58,7 +58,7 @@ def main():
     
     # Training arguments
     training_args = TrainingArguments(
-        output_dir="./llama2-mental-health-counselor",
+        output_dir="./llama3-mental-health-counselor",
         num_train_epochs=3,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=8,
@@ -90,8 +90,8 @@ def main():
     trainer.train()
     
     # Save the model
-    trainer.save_model("./llama2-mental-health-counselor-final")
-    tokenizer.save_pretrained("./llama2-mental-health-counselor-final")
+    trainer.save_model("./llama3-mental-health-counselor-final")
+    tokenizer.save_pretrained("./llama3-mental-health-counselor-final")
 
 if __name__ == "__main__":
     main()
