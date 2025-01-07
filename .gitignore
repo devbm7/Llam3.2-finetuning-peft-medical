@@ -1,4 +1,5 @@
 .venv
 .codegpt
+__pycache__
 llama3-mental-health-counselor
 llama3-mental-health-counselor-final
