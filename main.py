@@ -37,7 +37,7 @@ def tokenize_data(dataset, tokenizer):
     )
 
 def main():
-    model_name = "meta-llama/Llama-3.1-8B"
+    model_name = "meta-llama/Llama-3.2-3B"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -62,10 +62,10 @@ def main():
     model = get_peft_model(model, config)
 
     training_args = TrainingArguments(
-        output_dir="./llama318-mental-health-counselor",
+        output_dir="./llama323-mental-health-counselor",
         num_train_epochs=1,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=16,
+        gradient_accumulation_steps=32,
         warmup_steps=50,
         learning_rate=2e-4,
         fp16=True,
@@ -87,8 +87,8 @@ def main():
     )
 
     trainer.train()
-    model.save_pretrained("./llama318-mental-health-counselor-final")
-    tokenizer.save_pretrained("./llama318-mental-health-counselor-final")
+    model.save_pretrained("./llama323-mental-health-counselor-final")
+    tokenizer.save_pretrained("./llama323-mental-health-counselor-final")
 
 if __name__ == "__main__":
     torch.backends.cuda.matmul.allow_tf32 = True
