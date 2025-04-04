@@ -45,7 +45,7 @@ class MedicalChatbot:
             self.logger.error(f"Error initializing model: {str(e)}")
             raise
 
-    def generate_response(self, user_input, max_length=512, temperature=0.7):
+    def generate_response(self, user_input, max_length=256, temperature=0.5):
         """
         Generate a response to the user's input
         """
